@@ -1,0 +1,56 @@
+services:
+  otbr:
+    image: 'openthread/border-router:latest'
+    network_mode: host
+    privileged: true
+    environment:
+      - 'OT_RCP_DEVICE=spinel+hdlc+uart:///dev/ttyUSB_thread?uart-baudrate=460800'
+      - OT_INFRA_IF=enp0s25
+      - OT_THREAD_IF=wpan0
+      - OT_LOG_LEVEL=7
+      - OT_WEB_LISTEN_ADDR=0.0.0.0
+      - OT_WEB_LISTEN_PORT=8081
+      - OT_REST_LISTEN_ADDR=0.0.0.0
+      - OT_REST_LISTEN_PORT=8082
+    devices:
+      - '/dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_d64c43c71ef4ef11859ebd1b6d9880ab-if00-port0:/dev/ttyUSB_thread'
+    volumes:
+      - '/data/smart-home/otbr:/data'
+  matter-server:
+    image: 'ghcr.io/home-assistant-libs/python-matter-server:stable'
+    network_mode: host
+    security_opt:
+      - 'apparmor:unconfined'
+    volumes:
+      - '/data/smart-home/matter:/data'
+      - '/run/dbus:/run/dbus:ro'
+    command: '--storage-path /data --primary-interface enp0s25 --bluetooth-adapter 0'
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'python3 -c "import socket; socket.create_connection((\"localhost\", 5580), 3)" || exit 1'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  homeassistant:
+    image: 'ghcr.io/home-assistant/home-assistant:latest'
+    environment:
+      - SERVICE_URL_HOMEASSISTANT_8123
+      - 'TZ=${TZ:-UTC}'
+    ports:
+      - '8123:8123'
+    volumes:
+      - '/data/smart-home/assistant:/config'
+      - '/run/dbus:/run/dbus:ro'
+    privileged: true
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:8123'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
