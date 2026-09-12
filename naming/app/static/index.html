@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matter sensor names</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; background: #f4f5f7; color: #24292f;
+  }
+  header {
+    background: #fff; border-bottom: 1px solid #e1e4e8;
+    padding: 16px 24px; display: flex; align-items: baseline; gap: 16px;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .hint { font-size: 13px; color: #57606a; }
+  main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+  table {
+    width: 100%; border-collapse: collapse; background: #fff;
+    border: 1px solid #d8dee4; border-radius: 8px; overflow: hidden;
+  }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eaeef2; font-size: 14px; }
+  th { background: #f6f8fa; font-weight: 600; color: #57606a; }
+  tr:last-child td { border-bottom: none; }
+  td.upto { width: 90px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.on  { background: #dafbe1; color: #116329; }
+  .badge.off { background: #ffebe9; color: #9e2c26; }
+  .uid { font-family: ui-monospace, monospace; font-size: 12px; color: #57606a; }
+  input[type="text"] {
+    width: 100%; padding: 7px 10px; font-size: 14px;
+    border: 1px solid #d0d7de; border-radius: 6px;
+  }
+  input[type="text"]:focus { outline: 2px solid #0969da40; border-color: #0969da; }
+  input.dirty { border-color: #d4a72c; background: #fff8c5; }
+  button {
+    padding: 7px 14px; font-size: 13px; font-weight: 600;
+    border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa; cursor: pointer;
+  }
+  button.primary { background: #1f883d; border-color: #1f883d; color: #fff; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .msg { margin: 12px 2px; min-height: 20px; font-size: 13px; }
+  .msg.ok { color: #116329; }
+  .msg.err { color: #9e2c26; }
+  .empty td { color: #8b949e; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Matter sensor names</h1>
+  <span class="hint">Custom names show up in Grafana within ~30&nbsp;s. Empty name = fall back to Matter label / node&nbsp;id.</span>
+</header>
+<main>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:50px">Node</th><th>Product</th><th>Unique ID</th>
+        <th class="upto">Status</th><th style="width:180px">Custom name</th><th style="width:90px"></th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="msg" id="msg"></div>
+</main>
+<script>
+const $ = (sel) => document.querySelector(sel);
+const rowsEl = $("#rows"), msgEl = $("#msg");
+let nodes = [];
+let dirty = {};
+
+function flash(text, ok) {
+  msgEl.textContent = text;
+  msgEl.className = "msg " + (ok ? "ok" : "err");
+  setTimeout(() => { if (msgEl.textContent === text) msgEl.textContent = ""; }, 4000);
+}
+
+async function load() {
+  const res = await fetch("/api/nodes");
+  if (!res.ok) { flash("failed to load sensors", false); return; }
+  nodes = await res.json();
+  dirty = {};
+  render();
+}
+
+function render() {
+  if (!nodes.length) {
+    rowsEl.innerHTML = '<tr class="empty"><td colspan="6">No sensors found yet.</td></tr>';
+    return;
+  }
+  rowsEl.innerHTML = nodes.map((n) => {
+    const cur = dirty[n.device_uuid] !== undefined ? dirty[n.device_uuid] : (n.custom_name || "");
+    const changed = dirty[n.device_uuid] !== undefined &&
+                    dirty[n.device_uuid] !== (n.custom_name || "");
+    return `
+    <tr>
+      <td><strong>${n.node_id}</strong></td>
+      <td>${esc(n.product || "?")}<br><span class="uid">${esc(n.vendor || "")}</span></td>
+      <td class="uid" title="${esc(n.unique_id || "")}">${esc((n.unique_id || "?").slice(0, 8))}…</td>
+      <td class="upto"><span class="badge ${n.available ? "on" : "off"}">${n.available ? "online" : "offline"}</span></td>
+      <td><input type="text" maxlength="64" value="${esc(cur)}" data-uuid="${esc(n.device_uuid)}"
+                 oninput="onInput(this)"></td>
+      <td><button class="primary" data-uuid="${esc(n.device_uuid)}" ${changed ? "" : "disabled"}
+                  onclick="save(this)">Save</button></td>
+    </tr>`;
+  }).join("");
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function onInput(el) {
+  dirty[el.dataset.uuid] = el.value;
+  el.classList.add("dirty");
+  render();
+  const again = document.querySelector(`input[data-uuid="${CSS.escape(el.dataset.uuid)}"]`);
+  if (again) { again.focus(); again.selectionStart = again.selectionEnd = again.value.length; }
+}
+
+async function save(btn) {
+  const uuid = btn.dataset.uuid;
+  const input = document.querySelector(`input[data-uuid="${CSS.escape(uuid)}"]`);
+  const value = input.value;
+  btn.disabled = true;
+  const res = await fetch("/api/names", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_uuid: uuid, custom_name: value }),
+  });
+  if (res.ok) {
+    const node = nodes.find((n) => n.device_uuid === uuid);
+    if (node) node.custom_name = value.trim() || null;
+    delete dirty[uuid];
+    flash(value.trim() ? `saved "${value.trim()}"` : "name cleared", true);
+    render();
+  } else {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch {}
+    flash(`save failed: ${detail}`, false);
+    render();
+  }
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-# Hamoti Smart Home Stack — Home Assistant + Matter + Open Thread + Ikea
+# Hamoti Smart Home Stack — Home Assistant + Matter + Open Thread + Ikea + Grafana
 
 This setup runs cheap Ikea matter sensors like Timmerflotte and connects them to home assistant without the official Ikea matter bridge.
 
@@ -26,6 +26,9 @@ The Timmerflotte Sensor are battery powered and turned off most of the time. In 
 - Home Assistant Server
 - Home Assistant Phone App
 - Docker compose
+- TimescaleDB (history storage)
+- Grafana (dashboards)
+- Matter ingest + naming (monitoring helpers)
 
 Additionally i use coolify to manage the apps, but this is optional and has little to do with the rest of the setup.
 
@@ -40,6 +43,10 @@ Additionally i use coolify to manage the apps, but this is optional and has litt
 | matter-server (host net) | 5580/tcp                                   | WebSocket + dashboard | Full fabric control: commission/reset/control all nodes                                    | ❌ none                                                  |
 | matter-server (host net) | 5353/udp + ~30 ephemeral udp ports (v4+v6) | mDNS + CHIP           | Operational discovery & CASE sessions — **must stay reachable** for Matter devices to work | Matter crypto                                            |
 | homeassistant            | 8123/tcp via `docker-proxy` 0.0.0.0        | HTTP                  | HA frontend/API/websocket                                                                  | ✅ HA login, but **plain HTTP** — bypasses Traefik's TLS |
+| grafana                  | 3000/tcp via `docker-proxy` 0.0.0.0        | HTTP                  | Grafana dashboards                                                                         | ✅ Grafana login                                          |
+| naming                   | 8080/tcp via `docker-proxy` 0.0.0.0        | HTTP                  | Sensor naming UI (writes to TimescaleDB)                                                   | ❌ none                                                  |
+| timescaledb              | 127.0.0.1:5432                             | PostgreSQL            | History database, loopback-only                                                            | ✅ DB password                                           |
+| ingest (host net)        | —                                          | WebSocket client      | Read-only Matter firehose → TimescaleDB, no listener                                       | n/a                                                      |
 
 ##### Internal — Docker network only
 
@@ -49,6 +56,9 @@ Additionally i use coolify to manage the apps, but this is optional and has litt
 | homeassistant | 1900/udp        | SSDP discovery (bridge-isolated)                             |
 | homeassistant | 5353/udp        | mDNS (bridge-isolated — why OTBR mDNS auto-discovery fails)  |
 | homeassistant | 2 ephemeral tcp | transient runtime listeners                                  |
+| timescaledb   | 5432/tcp        | PostgreSQL, reachable by grafana/naming over the compose net |
+| grafana       | 3000/tcp        | dashboard, reachable by peer containers                      |
+| naming        | 8080/tcp        | naming API/UI, reachable by peer containers                  |
 
 OTBR and matter-server have no docker-internal footprint: being host-networked,
 everything they expose lands directly on the host/LAN.
@@ -126,6 +136,80 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  timescaledb:
+    image: 'timescale/timescaledb:latest-pg17'
+    container_name: matter-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: matter
+      POSTGRES_USER: matter
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set in .env}'
+      TZ: '${TZ:-UTC}'
+    volumes:
+      - '/data/smart-home/timescaledb:/var/lib/postgresql/data'
+      - './ingest/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro'
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U matter -d matter'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  grafana:
+    image: 'grafana/grafana:13.2.1'
+    container_name: matter-grafana
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    # The /data mount does not support changing ownership, so Grafana must run as root here.
+    user: '0:0'
+    environment:
+      GF_SECURITY_ADMIN_USER: '${GRAFANA_ADMIN_USER:-admin}'
+      GF_SECURITY_ADMIN_PASSWORD: '${GRAFANA_ADMIN_PASSWORD:?set in .env}'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD}'
+      TZ: '${TZ:-UTC}'
+    volumes:
+      - '/data/smart-home/grafana:/var/lib/grafana'
+      - './grafana/provisioning:/etc/grafana/provisioning:ro'
+      - './grafana/dashboards:/var/lib/grafana/dashboards:ro'
+    ports:
+      - '3000:3000'
+
+  naming:
+    build: ./naming
+    container_name: matter-naming
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
+    ports:
+      - '8080:8080'
+
+  ingest:
+    build: ./ingest
+    container_name: matter-ingest
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MATTER_WS_URL: '${MATTER_WS_URL:-ws://localhost:5580/ws}'
+      MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@localhost:5432/matter'
+      MATTER_LOG_LEVEL: '${MATTER_LOG_LEVEL:-INFO}'
+      MATTER_DEBUG_JSONL: '${MATTER_DEBUG_JSONL:-}'
+    volumes:
+      - '/data/smart-home/ingest:/data'
 ```
 
 ## Setup from scratch
@@ -148,8 +232,9 @@ sysctl -w net.ipv6.conf.all.forwarding=1   # persist in /etc/sysctl.conf or sysc
 
 ### 3. Deploy the stack
 
-Deploy via Coolify (or plain `docker compose up -d`). Wait until all three
-containers are healthy.
+Create `.env` from `.env.example` and set `POSTGRES_PASSWORD` /
+`GRAFANA_ADMIN_PASSWORD`, then deploy via Coolify (or plain
+`docker compose up -d --build`). Wait until all containers are healthy.
 
 ### 4. Form the Thread network
 
@@ -284,6 +369,92 @@ ot-ctl child table: device appears
 - Don't run `bluetoothctl scan` or other BT activity during commissioning.
 - After a failed attempt, re-trigger pairing mode before retrying. On Ikea devices this is done by pressing the reset button for >10 seconds.
 
+## Monitoring & History (TimescaleDB + Grafana)
+
+A read-only WebSocket client (`ingest`) taps the same Matter firehose as Home
+Assistant and stores every attribute update in TimescaleDB, where Grafana renders
+a provisioned dashboard. HA is untouched by this — the ingest client only listens.
+
+| Service | Container | Port | Purpose |
+| --- | --- | --- | --- |
+| TimescaleDB | `matter-timescaledb` | 127.0.0.1:5432 | storage (hypertables + retention/compression) |
+| Grafana | `matter-grafana` | 3000 | dashboards |
+| Naming UI | `matter-naming` | 8080 | give sensors friendly names |
+| Ingest | `matter-ingest` | — | read-only WebSocket client, stores the firehose |
+
+### First start
+
+The stack needs two secrets. Create `.env` from the example and fill them in:
+
+```bash
+cp .env.example .env
+# edit POSTGRES_PASSWORD and GRAFANA_ADMIN_PASSWORD
+docker compose up -d --build
+```
+
+On first start TimescaleDB initializes from `ingest/schema.sql` (tables,
+hypertables, compression, retention), Grafana auto-provisions the
+`Matter TimescaleDB` datasource and the **Matter Sensors** dashboard, and the
+ingest connects to `ws://localhost:5580/ws` (host network) and syncs all nodes.
+
+Check it's alive:
+
+```bash
+docker compose ps
+docker compose logs -f ingest
+```
+
+### Open the UIs
+
+| UI | URL | Login |
+| --- | --- | --- |
+| Grafana dashboard | http://\<host-ip\>:3000/d/matter-sensors | `admin` / `GRAFANA_ADMIN_PASSWORD` |
+| Sensor naming | http://\<host-ip\>:8080 | none (trusted LAN) |
+
+Custom names set in the naming UI appear in Grafana within ~30 s, without a restart.
+
+### Query the database
+
+```bash
+docker exec -it matter-timescaledb psql -U matter -d matter
+```
+
+Tables: `matter_nodes` (identity/metadata), `attribute_updates` (raw firehose),
+`events` (node lifecycle), `node_names` (custom names).
+
+> TimescaleDB is only published on `127.0.0.1:5432`, so it is not reachable from
+> the LAN. The ingest container reaches it via the loopback publish because it
+> runs on the host network.
+
+### Common operations
+
+```bash
+docker compose stop                          # stop (data persists)
+docker compose start                         # start again
+docker compose restart ingest                # reconnect + full node resync
+docker compose up -d --build ingest          # apply ingest code changes
+docker compose down                          # stop + remove containers
+```
+
+Changing the Grafana admin password: `GF_SECURITY_ADMIN_PASSWORD` only applies on
+the **first** boot with an empty database. For a running instance:
+
+```bash
+docker exec matter-grafana grafana cli admin reset-admin-password 'new-password'
+```
+
+### Where the monitoring data lives
+
+```
+/data/smart-home/timescaledb/   database
+/data/smart-home/grafana/       grafana.db, plugins
+/data/smart-home/ingest/        raw frame capture (debug)
+```
+
+Retention (attribute updates 180 d, events 365 d) and compression (after 7 d) are
+applied by `ingest/schema.sql` **only on a fresh** `/data/smart-home/timescaledb`.
+Changing it on an existing database needs manual SQL.
+
 ## Cheat sheet
 
 ```bash
@@ -302,18 +473,31 @@ docker logs -f matter-server-<uuid>
 # HA storage locations
 /data/smart-home/assistant/.storage/core.config_entries   # integration config
 /data/smart-home/assistant/.storage/thread.datasets       # preferred dataset TLV
+
+# Monitoring
+docker compose logs -f ingest                   # Matter firehose -> TimescaleDB
+docker exec -it matter-timescaledb psql -U matter -d matter
+curl -s http://<host-ip>:8080/api/nodes         # naming API
 ```
 
 ## Security notes
 
-All three management interfaces are **unauthenticated** and bound to `0.0.0.0`,
-reachable by anything on the LAN (host firewall is currently inactive):
+The Thread/Matter management interfaces are **unauthenticated** and bound to
+`0.0.0.0`, reachable by anything on the LAN (host firewall is currently inactive):
 
 | Port | Service       | Exposure                                                     |
 | ---- | ------------- | ------------------------------------------------------------ |
 | 8081 | OTBR web UI   | full border-router control                                   |
 | 8082 | OTBR REST API | read/write Thread dataset incl. **network key in plaintext** |
 | 5580 | matter-server | commission rogue devices, control/reset all Matter devices   |
+
+Additional monitoring interfaces:
+
+| Port | Service     | Auth / exposure                                                   |
+| ---- | ----------- | ----------------------------------------------------------------- |
+| 3000 | grafana     | Grafana login, bound to `0.0.0.0`                                 |
+| 8080 | naming UI   | ❌ none, bound to `0.0.0.0` — anyone on the LAN can rename sensors |
+| 5432 | timescaledb | password-protected, **loopback only** (`127.0.0.1`)               |
 
 **HA Bluetooth warning** ("adapter requires additional permissions"): cosmetic.
 HA sees `hci0` via D-Bus but can't get kernel MGMT control because it runs in a

@@ -54,3 +54,73 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+  timescaledb:
+    image: 'timescale/timescaledb:latest-pg17'
+    container_name: matter-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: matter
+      POSTGRES_USER: matter
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set in .env}'
+      TZ: '${TZ:-UTC}'
+    volumes:
+      - '/data/smart-home/timescaledb:/var/lib/postgresql/data'
+      - './ingest/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro'
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U matter -d matter'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  grafana:
+    image: 'grafana/grafana:13.2.1'
+    container_name: matter-grafana
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    # The /data mount does not support changing ownership, so Grafana must run as root here.
+    user: '0:0'
+    environment:
+      GF_SECURITY_ADMIN_USER: '${GRAFANA_ADMIN_USER:-admin}'
+      GF_SECURITY_ADMIN_PASSWORD: '${GRAFANA_ADMIN_PASSWORD:?set in .env}'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD}'
+      TZ: '${TZ:-UTC}'
+    volumes:
+      - '/data/smart-home/grafana:/var/lib/grafana'
+      - './grafana/provisioning:/etc/grafana/provisioning:ro'
+      - './grafana/dashboards:/var/lib/grafana/dashboards:ro'
+    ports:
+      - '3000:3000'
+  naming:
+    build: ./naming
+    container_name: matter-naming
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
+    ports:
+      - '8080:8080'
+  ingest:
+    build: ./ingest
+    container_name: matter-ingest
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MATTER_WS_URL: '${MATTER_WS_URL:-ws://localhost:5580/ws}'
+      MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@localhost:5432/matter'
+      MATTER_LOG_LEVEL: '${MATTER_LOG_LEVEL:-INFO}'
+      MATTER_DEBUG_JSONL: '${MATTER_DEBUG_JSONL:-}'
+    volumes:
+      - '/data/smart-home/ingest:/data'

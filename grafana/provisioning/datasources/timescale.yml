@@ -1,0 +1,25 @@
+apiVersion: 1
+
+deleteDatasources:
+  - name: Matter TimescaleDB
+    orgId: 1
+
+datasources:
+  - name: Matter TimescaleDB
+    uid: matter-timescale
+    type: postgres
+    access: proxy
+    url: timescaledb:5432
+    database: matter
+    user: matter
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      database: matter
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: true
+      maxOpenConns: 20
+      maxIdleConns: 10
+    isDefault: true
+    editable: false

@@ -1,0 +1,429 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["matter"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Matter Sensors",
+  "uid": "matter-sensors",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Environment",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": [],
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Temperature",
+      "id": 2,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": 3600000,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS temperature FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1026/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Humidity",
+      "id": 3,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": 3600000,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS humidity FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path IN ('1/1029/0', '2/1029/0') AND $__timeFilter(a.ts) ORDER BY a.ts"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Current temperature",
+      "id": 4,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "celsius", "decimals": 1 },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT time, sensor, temperature FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS temperature FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1026/0' AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Current humidity",
+      "id": 5,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "decimals": 0 },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT time, sensor, humidity FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS humidity FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path IN ('1/1029/0', '2/1029/0') AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Current PM2.5",
+      "id": 6,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 9 },
+      "fieldConfig": {
+        "defaults": { "unit": "conµg/m³", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 12 }, { "color": "orange", "value": 35 }, { "color": "red", "value": 55 } ] } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT time, sensor, pm25 FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS pm25 FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1037/0' AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Air quality",
+      "id": 7,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": { "text": "Good", "color": "green", "index": 0 },
+                "2": { "text": "Fair", "color": "super-light-green", "index": 1 },
+                "3": { "text": "Moderate", "color": "yellow", "index": 2 },
+                "4": { "text": "Poor", "color": "orange", "index": 3 },
+                "5": { "text": "Unhealthy", "color": "red", "index": 4 },
+                "6": { "text": "Very unhealthy", "color": "dark-red", "index": 5 },
+                "7": { "text": "Extremely unhealthy", "color": "dark-red", "index": 6 }
+              }
+            }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT time, sensor, air_quality FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric AS air_quality FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/91/0' AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "PM2.5",
+      "id": 8,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 13 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "conµg/m³",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never", "spanNulls": 3600000 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS pm25 FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1037/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "VOC",
+      "id": 9,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 13 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "conµg/m³",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never", "spanNulls": 3600000 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS voc FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1066/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Air quality",
+      "id": 10,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 13 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": { "text": "Good", "color": "green", "index": 0 },
+                "2": { "text": "Fair", "color": "super-light-green", "index": 1 },
+                "3": { "text": "Moderate", "color": "yellow", "index": 2 },
+                "4": { "text": "Poor", "color": "orange", "index": 3 },
+                "5": { "text": "Unhealthy", "color": "red", "index": 4 },
+                "6": { "text": "Very unhealthy", "color": "dark-red", "index": 5 },
+                "7": { "text": "Extremely unhealthy", "color": "dark-red", "index": 6 }
+              }
+            }
+          ],
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 1, "fillOpacity": 15, "showPoints": "never", "spanNulls": 7200000 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric AS air_quality FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/91/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "System",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "collapsed": false,
+      "panels": [],
+      "id": 11
+    },
+    {
+      "type": "timeseries",
+      "title": "Node availability",
+      "id": 12,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 21 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "lineWidth": 1, "fillOpacity": 20, "showPoints": "never", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT e.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || e.node_id) AS sensor, CASE WHEN (e.data->>'available')::boolean THEN 1 ELSE 0 END AS available FROM events e LEFT JOIN matter_nodes n ON n.node_id = e.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE e.event_type = 'node_updated' AND e.data ? 'available' AND $__timeFilter(e.ts) ORDER BY e.ts"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingest rate (updates / 5 min)",
+      "id": 13,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 21 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 60, "showPoints": "never", "spanNulls": false }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT $__timeGroupAlias(ts, '5m'), COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, count(*) AS updates FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE $__timeFilter(a.ts) GROUP BY 1, 2 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Node inventory",
+      "id": 14,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT node_id AS node, nn.custom_name AS name, label, product_name AS product, vendor_name AS vendor, unique_id, identity_source AS identity, available, date_commissioned AS commissioned, last_interview AS interviewed FROM matter_nodes n LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid ORDER BY node_id"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Recent events",
+      "id": 15,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } }, "overrides": [] },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT e.ts AS time, e.event_type AS event, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || e.node_id) AS node_name, e.node_id, left(e.data::text, 200) AS data FROM events e LEFT JOIN matter_nodes n ON n.node_id = e.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 50"
+        }
+      ]
+    }
+  ]
+}

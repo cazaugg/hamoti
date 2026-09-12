@@ -1,0 +1,17 @@
+# secrets
+.env
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# docker
+compose.override.yml
+
+# editors / os
+.idea/
+.vscode/
+.DS_Store
