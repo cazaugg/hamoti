@@ -133,9 +133,6 @@ services:
     #   ssh -L 18080:127.0.0.1:18080 <host>   ->   http://localhost:18080
     ports:
       - '127.0.0.1:18080:8080'
-    labels:
-      - 'traefik.http.middlewares.naming-auth.basicauth.users=${NAMING_BASICAUTH_USERS}'
-      - 'coolify.traefik.middlewares=naming-auth'
   ingest:
     build: ./ingest
     container_name: matter-ingest
