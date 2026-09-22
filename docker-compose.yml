@@ -8,8 +8,12 @@ services:
       - OT_INFRA_IF=enp0s25
       - OT_THREAD_IF=wpan0
       - OT_LOG_LEVEL=7
-      - OT_WEB_LISTEN_ADDR=0.0.0.0
+      # The web UI has no authentication and controls the border router, so bind
+      # it to loopback only. Reach it with: ssh -L 8081:127.0.0.1:8081 <host>
+      - OT_WEB_LISTEN_ADDR=127.0.0.1
       - OT_WEB_LISTEN_PORT=8081
+      # The REST API is consumed by Home Assistant, so it must stay reachable on
+      # the host. The host firewall restricts it to loopback + the Docker subnet.
       - OT_REST_LISTEN_ADDR=0.0.0.0
       - OT_REST_LISTEN_PORT=8082
     devices:
@@ -38,8 +42,10 @@ services:
     environment:
       - SERVICE_URL_HOMEASSISTANT_8123
       - 'TZ=${TZ:-UTC}'
+    # Loopback only: Traefik reaches HA over the compose network. This keeps a
+    # break-glass path for first-time setup via: ssh -L 8123:127.0.0.1:8123 <host>
     ports:
-      - '8123:8123'
+      - '127.0.0.1:8123:8123'
     volumes:
       - '/data/smart-home/assistant:/config'
       - '/run/dbus:/run/dbus:ro'
@@ -96,8 +102,9 @@ services:
       - '/data/smart-home/grafana:/var/lib/grafana'
       - './grafana/provisioning:/etc/grafana/provisioning:ro'
       - './grafana/dashboards:/var/lib/grafana/dashboards:ro'
+    # Loopback only: Traefik serves Grafana over the compose network.
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
   naming:
     build: ./naming
     container_name: matter-naming
@@ -107,8 +114,14 @@ services:
         condition: service_healthy
     environment:
       MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
+    # Loopback only. This UI has no auth of its own, so it is served through
+    # Traefik with HTTP BasicAuth (labels below). Assign a domain to this
+    # service in Coolify so Traefik generates a router for it.
     ports:
-      - '8080:8080'
+      - '127.0.0.1:8080:8080'
+    labels:
+      - 'traefik.http.middlewares.naming-auth.basicauth.users=${NAMING_BASICAUTH_USERS}'
+      - 'coolify.traefik.middlewares=naming-auth'
   ingest:
     build: ./ingest
     container_name: matter-ingest
