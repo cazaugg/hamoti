@@ -70,7 +70,10 @@ services:
     environment:
       POSTGRES_DB: matter
       POSTGRES_USER: matter
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set in .env}'
+      # Use ":?" without a message: Coolify parses the text after ":?" as the
+      # value, which would set the password to that literal string. Set the
+      # real value in Coolify's Environment Variables (or in .env standalone).
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?}'
       TZ: '${TZ:-UTC}'
     volumes:
       - '/data/smart-home/timescaledb:/var/lib/postgresql/data'
@@ -95,7 +98,7 @@ services:
     user: '0:0'
     environment:
       GF_SECURITY_ADMIN_USER: '${GRAFANA_ADMIN_USER:-admin}'
-      GF_SECURITY_ADMIN_PASSWORD: '${GRAFANA_ADMIN_PASSWORD:?set in .env}'
+      GF_SECURITY_ADMIN_PASSWORD: '${GRAFANA_ADMIN_PASSWORD:?}'
       GF_USERS_ALLOW_SIGN_UP: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
       GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
@@ -119,6 +122,10 @@ services:
         condition: service_healthy
     environment:
       MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
+      # Coolify generated-domain variable: tells the proxy to route this
+      # service's domain to container port 8080. Without a port hint (and with
+      # no EXPOSE in the image) Traefik has no backend and returns 503.
+      SERVICE_URL_NAMING_8080: /
     # This UI has no auth of its own, so it is served through Traefik with HTTP
     # BasicAuth (labels below). Assign a domain to this service in Coolify so
     # Traefik generates a router for it. Coolify publishes the container's 8080

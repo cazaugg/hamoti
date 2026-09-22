@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
-CREATE TABLE matter_nodes (
+CREATE TABLE IF NOT EXISTS matter_nodes (
     node_id            integer PRIMARY KEY,
     device_uuid        text        NOT NULL UNIQUE,
     identity_source    text        NOT NULL,
@@ -21,13 +21,13 @@ CREATE TABLE matter_nodes (
     updated_at         timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE node_names (
+CREATE TABLE IF NOT EXISTS node_names (
     device_uuid text        PRIMARY KEY,
     custom_name text        NOT NULL CHECK (length(custom_name) <= 64),
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE attribute_updates (
+CREATE TABLE IF NOT EXISTS attribute_updates (
     ts             timestamptz NOT NULL DEFAULT now(),
     node_id        integer     NOT NULL,
     attribute_path text        NOT NULL,
@@ -37,17 +37,18 @@ CREATE TABLE attribute_updates (
     value          jsonb
 );
 SELECT create_hypertable('attribute_updates', 'ts', if_not_exists => TRUE);
-CREATE INDEX ON attribute_updates (node_id, attribute_path, ts DESC);
+CREATE INDEX IF NOT EXISTS attribute_updates_node_path_ts
+    ON attribute_updates (node_id, attribute_path, ts DESC);
 
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
     ts         timestamptz NOT NULL DEFAULT now(),
     event_type text        NOT NULL,
     node_id    integer,
     data       jsonb       NOT NULL
 );
 SELECT create_hypertable('events', 'ts', if_not_exists => TRUE);
-CREATE INDEX ON events (event_type, ts DESC);
-CREATE INDEX ON events (node_id, ts DESC);
+CREATE INDEX IF NOT EXISTS events_type_ts ON events (event_type, ts DESC);
+CREATE INDEX IF NOT EXISTS events_node_ts ON events (node_id, ts DESC);
 
 ALTER TABLE attribute_updates
     SET (timescaledb.compress, timescaledb.compress_segmentby = 'node_id, attribute_path');

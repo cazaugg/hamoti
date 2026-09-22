@@ -144,7 +144,7 @@ services:
     environment:
       POSTGRES_DB: matter
       POSTGRES_USER: matter
-      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set in .env}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?}'
       TZ: '${TZ:-UTC}'
     volumes:
       - '/data/smart-home/timescaledb:/var/lib/postgresql/data'
@@ -170,7 +170,7 @@ services:
     user: '0:0'
     environment:
       GF_SECURITY_ADMIN_USER: '${GRAFANA_ADMIN_USER:-admin}'
-      GF_SECURITY_ADMIN_PASSWORD: '${GRAFANA_ADMIN_PASSWORD:?set in .env}'
+      GF_SECURITY_ADMIN_PASSWORD: '${GRAFANA_ADMIN_PASSWORD:?}'
       GF_USERS_ALLOW_SIGN_UP: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
       GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
@@ -192,6 +192,7 @@ services:
         condition: service_healthy
     environment:
       MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
+      SERVICE_URL_NAMING_8080: /
     ports:
       - '127.0.0.1:18080:8080'
 
@@ -232,9 +233,20 @@ sysctl -w net.ipv6.conf.all.forwarding=1   # persist in /etc/sysctl.conf or sysc
 
 ### 3. Deploy the stack
 
-Create `.env` from `.env.example` and set `POSTGRES_PASSWORD` /
-`GRAFANA_ADMIN_PASSWORD`, then deploy via Coolify (or plain
-`docker compose up -d --build`). Wait until all containers are healthy.
+Set the secrets as **environment variables on the Coolify resource** (for a
+plain `docker compose` run, copy `.env.example` to `.env` and fill it in):
+
+| Variable                  | Required        | Notes                                            |
+| ------------------------- | --------------- | ------------------------------------------------ |
+| `POSTGRES_PASSWORD`       | ✅              | PostgreSQL / TimescaleDB password                |
+| `GRAFANA_ADMIN_PASSWORD`  | ✅              | Grafana admin password                           |
+| `NAMING_BASICAUTH_USERS`  | ✅ (Coolify)    | Traefik BasicAuth, `user:bcrypt-hash`            |
+| `TZ`, `GRAFANA_ADMIN_USER`, `MATTER_*` | optional | sane defaults apply               |
+
+Then deploy via Coolify (or plain `docker compose up -d --build`). Wait until
+all containers are healthy. Note the compose uses `${VAR:?}` (no message) on
+purpose: Coolify treats the text after `:?` as the value, so a message like
+`:?set in .env` would become the literal password.
 
 ### 4. Form the Thread network
 
@@ -384,7 +396,8 @@ a provisioned dashboard. HA is untouched by this — the ingest client only list
 
 ### First start
 
-The stack needs two secrets. Create `.env` from the example and fill them in:
+The stack needs two secrets. Create `.env` from the example and fill them in
+(or, on Coolify, set them in the resource's **Environment Variables**):
 
 ```bash
 cp .env.example .env
