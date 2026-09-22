@@ -4,9 +4,9 @@
 #
 set -uo pipefail
 
-LOOPBACK_PORTS=(8081 8082 5580)
+LOOPBACK_PORTS=(8081 8082 5580 18123 13000 18080)
 # Ports that should NOT be reachable from the network.
-EXTERNAL_PORTS=(3000 8080 8081 8123 8082 5580 5432)
+EXTERNAL_PORTS=(3000 8080 8081 8123 8082 5580 5432 13000 18080 18123)
 PUBLIC_PORTS=(80 443)
 
 echo "==================== ufw ===================="
@@ -68,9 +68,10 @@ travels over lo, which ufw always accepts, so blocked ports can look open.
 
 Test from a DIFFERENT machine instead:
 
-  nmap -Pn -p 80,443,3000,8080,8081,8123,8082,5580 <host-lan-ip>
+  nmap -Pn -p 80,443,3000,8080,8081,8123,13000,18080,18123,8082,5580 <host-lan-ip>
 
-Expected: only 80 and 443 open.
+Expected: only 80 and 443 open. Ports published by Coolify (3000/8080/8123)
+may also answer from ADMIN_CIDR when ALLOW_ADMIN_TO_PUBLISHED=1.
 
 Also test over IPv6 if the host has a global address:
 

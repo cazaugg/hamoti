@@ -32,9 +32,12 @@ before you rely on the result.
 | allow `8082`,`5580` from Docker subnets | Home Assistant / ingest only |
 | `DOCKER-USER` block | stops LAN/WAN reaching any *published* Docker port other than 80/443 |
 
-`8081`, `8123`, `3000` and `8080` are not listed because `docker-compose.yml`
-already binds them to `127.0.0.1`; they are gone from the network before the
-firewall even matters.
+`8081` and the break-glass loopback ports `18123`, `13000` and `18080` are not
+listed because `docker-compose.yml` binds them to `127.0.0.1`; they are gone
+from the network before the firewall even matters. The web UIs that Coolify
+publishes itself (`8123`, `3000`, `8080`) are covered by the `DOCKER-USER`
+block below, which only lets 80/443 (and, with `ALLOW_ADMIN_TO_PUBLISHED=1`,
+`ADMIN_CIDR`) through.
 
 ## Configuration
 

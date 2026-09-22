@@ -42,10 +42,13 @@ services:
     environment:
       - SERVICE_URL_HOMEASSISTANT_8123
       - 'TZ=${TZ:-UTC}'
-    # Loopback only: Traefik reaches HA over the compose network. This keeps a
-    # break-glass path for first-time setup via: ssh -L 8123:127.0.0.1:8123 <host>
+    # Traefik reaches HA over the compose network. Coolify publishes the
+    # container's 8123 on 0.0.0.0 itself, so binding 8123 here too fails with
+    # "port is already allocated". Break-glass first-time setup uses a high
+    # loopback port instead:
+    #   ssh -L 18123:127.0.0.1:18123 <host>   ->   http://localhost:18123
     ports:
-      - '127.0.0.1:8123:8123'
+      - '127.0.0.1:18123:8123'
     volumes:
       - '/data/smart-home/assistant:/config'
       - '/run/dbus:/run/dbus:ro'
@@ -102,9 +105,11 @@ services:
       - '/data/smart-home/grafana:/var/lib/grafana'
       - './grafana/provisioning:/etc/grafana/provisioning:ro'
       - './grafana/dashboards:/var/lib/grafana/dashboards:ro'
-    # Loopback only: Traefik serves Grafana over the compose network.
+    # Traefik serves Grafana over the compose network. Coolify publishes the
+    # container's 3000 on 0.0.0.0 itself, so break-glass uses a high loopback
+    # port: ssh -L 13000:127.0.0.1:13000 <host>  ->  http://localhost:13000
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:13000:3000'
   naming:
     build: ./naming
     container_name: matter-naming
@@ -114,11 +119,13 @@ services:
         condition: service_healthy
     environment:
       MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
-    # Loopback only. This UI has no auth of its own, so it is served through
-    # Traefik with HTTP BasicAuth (labels below). Assign a domain to this
-    # service in Coolify so Traefik generates a router for it.
+    # This UI has no auth of its own, so it is served through Traefik with HTTP
+    # BasicAuth (labels below). Assign a domain to this service in Coolify so
+    # Traefik generates a router for it. Coolify publishes the container's 8080
+    # on 0.0.0.0 itself, so break-glass uses a high loopback port:
+    #   ssh -L 18080:127.0.0.1:18080 <host>   ->   http://localhost:18080
     ports:
-      - '127.0.0.1:8080:8080'
+      - '127.0.0.1:18080:8080'
     labels:
       - 'traefik.http.middlewares.naming-auth.basicauth.users=${NAMING_BASICAUTH_USERS}'
       - 'coolify.traefik.middlewares=naming-auth'

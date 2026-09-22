@@ -42,9 +42,9 @@ Additionally i use coolify to manage the apps, but this is optional and has litt
 | otbr (host net)          | 61631/udp, 54877/udp (`enp0s25`)           | Thread backbone       | Thread-over-infrastructure traffic                                                         | Thread crypto                                            |
 | matter-server (host net) | 5580/tcp                                   | WebSocket + dashboard | Full fabric control: commission/reset/control all nodes                                    | ❌ none                                                  |
 | matter-server (host net) | 5353/udp + ~30 ephemeral udp ports (v4+v6) | mDNS + CHIP           | Operational discovery & CASE sessions — **must stay reachable** for Matter devices to work | Matter crypto                                            |
-| homeassistant            | 8123/tcp via `docker-proxy` 0.0.0.0        | HTTP                  | HA frontend/API/websocket                                                                  | ✅ HA login, but **plain HTTP** — bypasses Traefik's TLS |
-| grafana                  | 3000/tcp via `docker-proxy` 0.0.0.0        | HTTP                  | Grafana dashboards                                                                         | ✅ Grafana login                                          |
-| naming                   | 8080/tcp via `docker-proxy` 0.0.0.0        | HTTP                  | Sensor naming UI (writes to TimescaleDB)                                                   | ❌ none                                                  |
+| homeassistant            | 8123/tcp via Coolify + `127.0.0.1:18123`   | HTTP                  | HA frontend/API/websocket                                                                  | ✅ HA login, but **plain HTTP** — bypasses Traefik's TLS |
+| grafana                  | 3000/tcp via Coolify + `127.0.0.1:13000`   | HTTP                  | Grafana dashboards                                                                         | ✅ Grafana login                                          |
+| naming                   | 8080/tcp via Coolify + `127.0.0.1:18080`   | HTTP                  | Sensor naming UI (writes to TimescaleDB)                                                   | ❌ none                                                  |
 | timescaledb              | 127.0.0.1:5432                             | PostgreSQL            | History database, loopback-only                                                            | ✅ DB password                                           |
 | ingest (host net)        | —                                          | WebSocket client      | Read-only Matter firehose → TimescaleDB, no listener                                       | n/a                                                      |
 
@@ -121,7 +121,7 @@ services:
       - SERVICE_URL_HOMEASSISTANT_8123
       - 'TZ=${TZ:-UTC}'
     ports:
-      - '8123:8123'
+      - '127.0.0.1:18123:8123'
     volumes:
       - '/data/smart-home/assistant:/config'
       - '/run/dbus:/run/dbus:ro'
@@ -181,7 +181,7 @@ services:
       - './grafana/provisioning:/etc/grafana/provisioning:ro'
       - './grafana/dashboards:/var/lib/grafana/dashboards:ro'
     ports:
-      - '3000:3000'
+      - '127.0.0.1:13000:3000'
 
   naming:
     build: ./naming
@@ -193,7 +193,7 @@ services:
     environment:
       MATTER_DSN: 'postgresql://matter:${POSTGRES_PASSWORD}@timescaledb:5432/matter'
     ports:
-      - '8080:8080'
+      - '127.0.0.1:18080:8080'
 
   ingest:
     build: ./ingest
@@ -269,7 +269,7 @@ curl -s http://<host-ip>:8082/node/dataset/active   # shows name/extpanid/key/ch
 
 When HA is served behind a reverse proxy, the first access must bypass the proxy to setup the configuration.
 
-Open `http://<host-ip>:8123`, setup the admin login and go to `Settings -> System -> Network -> Reverse Proxy` and enable `Trust X-Forwarded-For` and add Trusted Proxies `10.0.0.0/8`
+Reach HA without the proxy first. From your workstation, tunnel the break-glass port: `ssh -L 18123:127.0.0.1:18123 <host>` then open `http://localhost:18123` (or use the domain Coolify assigned to HA). Set up the admin login, then go to `Settings -> System -> Network -> Reverse Proxy` and enable `Trust X-Forwarded-For` and add Trusted Proxies `10.0.0.0/8`
 
 Restart the container and now you should be able to access through the proxy and https (if proxy is correctly setup).
 
@@ -378,8 +378,8 @@ a provisioned dashboard. HA is untouched by this — the ingest client only list
 | Service | Container | Port | Purpose |
 | --- | --- | --- | --- |
 | TimescaleDB | `matter-timescaledb` | 127.0.0.1:5432 | storage (hypertables + retention/compression) |
-| Grafana | `matter-grafana` | 3000 | dashboards |
-| Naming UI | `matter-naming` | 8080 | give sensors friendly names |
+| Grafana | `matter-grafana` | 3000 (break-glass `127.0.0.1:13000`) | dashboards |
+| Naming UI | `matter-naming` | 8080 (break-glass `127.0.0.1:18080`) | give sensors friendly names |
 | Ingest | `matter-ingest` | — | read-only WebSocket client, stores the firehose |
 
 ### First start
@@ -408,8 +408,8 @@ docker compose logs -f ingest
 
 | UI | URL | Login |
 | --- | --- | --- |
-| Grafana dashboard | http://\<host-ip\>:3000/d/matter-sensors | `admin` / `GRAFANA_ADMIN_PASSWORD` |
-| Sensor naming | http://\<host-ip\>:8080 | none (trusted LAN) |
+| Grafana dashboard | https://grafana.\<domain\>/d/matter-sensors (or `ssh -L 13000:127.0.0.1:13000`) | `admin` / `GRAFANA_ADMIN_PASSWORD` |
+| Sensor naming | https://naming.\<domain\>/ (or `ssh -L 18080:127.0.0.1:18080`) | HTTP BasicAuth |
 
 Custom names set in the naming UI appear in Grafana within ~30 s, without a restart.
 
@@ -477,13 +477,14 @@ docker logs -f matter-server-<uuid>
 # Monitoring
 docker compose logs -f ingest                   # Matter firehose -> TimescaleDB
 docker exec -it matter-timescaledb psql -U matter -d matter
-curl -s http://<host-ip>:8080/api/nodes         # naming API
+curl -s http://localhost:18080/api/nodes        # naming API (on the host)
 ```
 
 ## Security notes
 
-The Thread/Matter management interfaces are **unauthenticated** and bound to
-`0.0.0.0`, reachable by anything on the LAN (host firewall is currently inactive):
+The Thread/Matter management interfaces are **unauthenticated**. OTBR's web UI
+listens on loopback only; the rest listen on `0.0.0.0` but `firewall/apply.sh`
+restricts them to loopback + the Docker subnets:
 
 | Port | Service       | Exposure                                                     |
 | ---- | ------------- | ------------------------------------------------------------ |
@@ -495,8 +496,8 @@ Additional monitoring interfaces:
 
 | Port | Service     | Auth / exposure                                                   |
 | ---- | ----------- | ----------------------------------------------------------------- |
-| 3000 | grafana     | Grafana login, bound to `0.0.0.0`                                 |
-| 8080 | naming UI   | ❌ none, bound to `0.0.0.0` — anyone on the LAN can rename sensors |
+| 3000 | grafana     | Grafana login; Coolify-published, break-glass `127.0.0.1:13000`   |
+| 8080 | naming UI   | HTTP BasicAuth via Traefik; break-glass `127.0.0.1:18080` (no auth) |
 | 5432 | timescaledb | password-protected, **loopback only** (`127.0.0.1`)               |
 
 **HA Bluetooth warning** ("adapter requires additional permissions"): cosmetic.
