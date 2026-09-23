@@ -148,7 +148,6 @@ services:
       TZ: '${TZ:-UTC}'
     volumes:
       - '/data/smart-home/timescaledb:/var/lib/postgresql/data'
-      - './ingest/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro'
     ports:
       - '127.0.0.1:5432:5432'
     healthcheck:
@@ -405,8 +404,9 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-On first start TimescaleDB initializes from `ingest/schema.sql` (tables,
-hypertables, compression, retention), Grafana auto-provisions the
+On first start the `ingest` service applies `ingest/schema.sql` itself (tables,
+hypertables, compression, retention, views) and then `ingest/cluster_seed.sql`
+(the standard cluster/attribute registry), Grafana auto-provisions the
 `Matter TimescaleDB` datasource and the **Matter Sensors** dashboard, and the
 ingest connects to `ws://localhost:5580/ws` (host network) and syncs all nodes.
 
@@ -426,6 +426,10 @@ docker compose logs -f ingest
 
 Custom names set in the naming UI appear in Grafana within ~30 s, without a restart.
 
+The dashboard has a **Sensor** dropdown (the `$sensor` template variable,
+backed by `SELECT DISTINCT sensor FROM matter_sensors`) that filters every
+panel; it defaults to *All*.
+
 ### Query the database
 
 ```bash
@@ -434,6 +438,46 @@ docker exec -it matter-timescaledb psql -U matter -d matter
 
 Tables: `matter_nodes` (identity/metadata), `attribute_updates` (raw firehose),
 `events` (node lifecycle), `node_names` (custom names).
+
+The `ingest` service also maintains a registry of the standard Matter clusters
+and their attributes (`matter_clusters`, `matter_cluster_attributes`), generated
+from the connectedhomeip ZCL data model by
+`ingest/tools/generate_cluster_seed.py` into `ingest/cluster_seed.sql`, plus a
+curated map of which attributes are measurements and how to scale them
+(`matter_measurement_map`, `matter_measurement_unit_codes`).
+
+Three views make querying easy:
+
+| View | Contents |
+| --- | --- |
+| `matter_sensors` | one row per node, display name resolved |
+| `matter_attributes` | every attribute update with cluster/attribute names and a scaled `value` + `unit` where known |
+| `matter_measurements` | just the known measurements, unit already resolved |
+
+So instead of repeating the three-way join and the `/100`:
+
+```sql
+SELECT time, sensor, value AS temperature
+FROM matter_measurements
+WHERE measurement = 'temperature'
+  AND sensor = 'living room'
+  AND $__timeFilter(time)
+ORDER BY time;
+```
+
+`value` is already scaled to physical units (temperature °C, humidity %,
+CO₂ ppm, PM2.5 µg/m³, ...). For measurements whose unit is reported by the
+device (`MeasurementUnit`, attribute `0x0008`) the view uses the device value;
+it falls back to a per-cluster default only when the device does not report one.
+Available `measurement` names include `temperature`, `humidity`, `co2`, `pm25`,
+`pm1`, `pm10`, `tvoc`, `radon`, `co`, `no2`, `ozone`, `formaldehyde`,
+`air_quality`, `illuminance`, `pressure`, `flow`, `soil_moisture`,
+`leaf_wetness`, `battery_voltage`, `battery_percent` and
+`battery_time_remaining`.
+
+> The cluster registry is a snapshot. Refresh it after a Matter release by
+> running `python ingest/tools/generate_cluster_seed.py` (needs network) and
+> committing the regenerated `ingest/cluster_seed.sql`.
 
 > TimescaleDB is only published on `127.0.0.1:5432`, so it is not reachable from
 > the LAN. The ingest container reaches it via the loopback publish because it
@@ -465,8 +509,8 @@ docker exec matter-grafana grafana cli admin reset-admin-password 'new-password'
 ```
 
 Retention (attribute updates 180 d, events 365 d) and compression (after 7 d) are
-applied by `ingest/schema.sql` **only on a fresh** `/data/smart-home/timescaledb`.
-Changing it on an existing database needs manual SQL.
+(re)applied by the `ingest` service from `ingest/schema.sql` on every startup, so
+they survive a fresh database. Changing the policies needs manual SQL.
 
 ## Cheat sheet
 
@@ -491,6 +535,10 @@ docker logs -f matter-server-<uuid>
 docker compose logs -f ingest                   # Matter firehose -> TimescaleDB
 docker exec -it matter-timescaledb psql -U matter -d matter
 curl -s http://localhost:18080/api/nodes        # naming API (on the host)
+
+# Latest measurements via the view (unit already resolved)
+docker exec matter-timescaledb psql -U matter -d matter -c \
+  "SELECT sensor, measurement, value, unit FROM matter_measurements ORDER BY time DESC LIMIT 20"
 ```
 
 ## Security notes
@@ -538,3 +586,9 @@ the `/run/dbus` mount from the homeassistant service.
 ### IKEA ALPSTUGA
 
 - For the sensor to receive correct time from home assistant, you need to install the integration `Mater Time Sync` from HACS (Home Assistant Community Store).
+- Measurement clusters: Temperature `0x0402`, Relative Humidity `0x0405`,
+  Carbon Dioxide `0x040D` (float, ppm), PM2.5 `0x042A` (float, µg/m³) and
+  Air Quality `0x005B`. Note the cluster IDs: CO₂ is `0x040D` and PM2.5 is
+  `0x042A` — an earlier revision of the Grafana dashboard had these two swapped.
+- It does not report the `MeasurementUnit` (`0x0008`) attribute, so
+  `matter_measurements.unit` uses the per-cluster default (`ppm` / `ug/m3`).

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 import psycopg
 from psycopg.types.json import Json
@@ -8,6 +9,48 @@ from psycopg.types.json import Json
 from .identity import build_node_row
 
 log = logging.getLogger("matter.store")
+
+# Bundled by the Dockerfile into /app. Applied idempotently on startup (in
+# order) so a fresh database is never left without the tables, the cluster
+# registry or the convenience views.
+SCHEMA_FILES = [
+    Path(__file__).resolve().parent.parent / "schema.sql",
+    Path(__file__).resolve().parent.parent / "cluster_seed.sql",
+]
+
+
+def _split_statements(sql: str) -> list[str]:
+    """Split a SQL script on semicolons, ignoring single-quoted strings and
+    ``--`` line comments. Sufficient for schema.sql (no dollar-quoting)."""
+    statements: list[str] = []
+    buf: list[str] = []
+    in_string = False
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if in_string:
+            buf.append(ch)
+            in_string = ch != "'"
+        elif ch == "'":
+            buf.append(ch)
+            in_string = True
+        elif ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            newline = sql.find("\n", i)
+            i = n if newline == -1 else newline
+            continue
+        elif ch == ";":
+            statement = "".join(buf).strip()
+            if statement:
+                statements.append(statement)
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        statements.append(tail)
+    return statements
+
 
 UPSERT_NODE = """
 INSERT INTO matter_nodes (
@@ -71,6 +114,7 @@ class Store:
 
     async def start(self):
         self._conn = await self._connect()
+        await self._ensure_schema()
         self._queue = asyncio.Queue(maxsize=200_000)
         self._worker = asyncio.create_task(self._flush_loop())
 
@@ -96,6 +140,21 @@ class Store:
                 log.warning("db connect failed (%s), retrying", e)
                 await asyncio.sleep(2 * attempt + 1)
         raise RuntimeError("unreachable")
+
+    async def _ensure_schema(self) -> None:
+        for path in SCHEMA_FILES:
+            if not path.exists():
+                log.warning(
+                    "schema file %s not found; skipping (is it bundled?)", path
+                )
+                continue
+            statements = _split_statements(path.read_text(encoding="utf-8"))
+            for statement in statements:
+                async with self._conn.cursor() as cur:
+                    await cur.execute(statement)
+                    if cur.description is not None:
+                        await cur.fetchall()
+            log.info("applied %s (%s statement(s))", path.name, len(statements))
 
     async def put(self, kind: str, record: tuple):
         try:
@@ -173,6 +232,7 @@ class Store:
                     pass
                 await asyncio.sleep(2)
                 self._conn = await self._connect()
+                await self._ensure_schema()
             except Exception:
                 log.exception("unexpected write error, dropping batch of %s", len(batch))
                 return

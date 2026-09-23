@@ -7,7 +7,25 @@
   "refresh": "1m",
   "schemaVersion": 39,
   "tags": ["matter"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "sensor",
+        "label": "Sensor",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "matter-timescale" },
+        "definition": "SELECT DISTINCT sensor FROM matter_sensors ORDER BY 1",
+        "query": "SELECT DISTINCT sensor FROM matter_sensors ORDER BY 1",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 1,
+        "sort": 1,
+        "regex": "",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "options": []
+      }
+    ]
+  },
   "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
@@ -56,7 +74,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS temperature FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1026/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+          "rawSql": "SELECT time, sensor, value AS temperature FROM matter_measurements WHERE measurement = 'temperature' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY time"
         }
       ]
     },
@@ -92,7 +110,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS humidity FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path IN ('1/1029/0', '2/1029/0') AND $__timeFilter(a.ts) ORDER BY a.ts"
+          "rawSql": "SELECT time, sensor, value AS humidity FROM matter_measurements WHERE measurement = 'humidity' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY time"
         }
       ]
     },
@@ -120,7 +138,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT time, sensor, temperature FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS temperature FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1026/0' AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+          "rawSql": "SELECT time, sensor, temperature FROM (SELECT DISTINCT ON (node_id) time, sensor, value AS temperature FROM matter_measurements WHERE measurement = 'temperature' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY node_id, time DESC) latest ORDER BY time"
         }
       ]
     },
@@ -148,7 +166,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT time, sensor, humidity FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS humidity FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path IN ('1/1029/0', '2/1029/0') AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+          "rawSql": "SELECT time, sensor, humidity FROM (SELECT DISTINCT ON (node_id) time, sensor, value AS humidity FROM matter_measurements WHERE measurement = 'humidity' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY node_id, time DESC) latest ORDER BY time"
         }
       ]
     },
@@ -176,7 +194,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT time, sensor, pm25 FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS pm25 FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1037/0' AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+          "rawSql": "SELECT time, sensor, pm25 FROM (SELECT DISTINCT ON (node_id) time, sensor, value AS pm25 FROM matter_measurements WHERE measurement = 'pm25' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY node_id, time DESC) latest ORDER BY time"
         }
       ]
     },
@@ -220,16 +238,44 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT time, sensor, air_quality FROM (SELECT DISTINCT ON (a.node_id) a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric AS air_quality FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/91/0' AND $__timeFilter(a.ts) ORDER BY a.node_id, a.ts DESC) latest ORDER BY time"
+          "rawSql": "SELECT time, sensor, air_quality FROM (SELECT DISTINCT ON (node_id) time, sensor, value AS air_quality FROM matter_measurements WHERE measurement = 'air_quality' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY node_id, time DESC) latest ORDER BY time"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CO₂",
+      "id": 8,
+      "datasource": { "type": "postgres", "uid": "matter-timescale" },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 13 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "conppm",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never", "spanNulls": 3600000 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "matter-timescale" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT time, sensor, value AS co2 FROM matter_measurements WHERE measurement = 'co2' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY time"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "PM2.5",
-      "id": 8,
+      "id": 9,
       "datasource": { "type": "postgres", "uid": "matter-timescale" },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 13 },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 13 },
       "fieldConfig": {
         "defaults": {
           "unit": "conµg/m³",
@@ -248,16 +294,16 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS pm25 FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1037/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+          "rawSql": "SELECT time, sensor, value AS pm25 FROM matter_measurements WHERE measurement = 'pm25' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY time"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "VOC",
-      "id": 9,
+      "title": "TVOC",
+      "id": 16,
       "datasource": { "type": "postgres", "uid": "matter-timescale" },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 13 },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 13 },
       "fieldConfig": {
         "defaults": {
           "unit": "conµg/m³",
@@ -276,7 +322,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric / 100 AS voc FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/1066/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+          "rawSql": "SELECT time, sensor, value AS tvoc FROM matter_measurements WHERE measurement = 'tvoc' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY time"
         }
       ]
     },
@@ -285,7 +331,7 @@
       "title": "Air quality",
       "id": 10,
       "datasource": { "type": "postgres", "uid": "matter-timescale" },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 13 },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 13 },
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -317,7 +363,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT a.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, (a.value::text)::numeric AS air_quality FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE a.attribute_path = '1/91/0' AND $__timeFilter(a.ts) ORDER BY a.ts"
+          "rawSql": "SELECT time, sensor, value AS air_quality FROM matter_measurements WHERE measurement = 'air_quality' AND sensor IN ($sensor) AND $__timeFilter(time) ORDER BY time"
         }
       ]
     },
@@ -355,7 +401,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT e.ts AS time, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || e.node_id) AS sensor, CASE WHEN (e.data->>'available')::boolean THEN 1 ELSE 0 END AS available FROM events e LEFT JOIN matter_nodes n ON n.node_id = e.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE e.event_type = 'node_updated' AND e.data ? 'available' AND $__timeFilter(e.ts) ORDER BY e.ts"
+          "rawSql": "SELECT e.time, COALESCE(s.sensor, 'node ' || e.node_id) AS sensor, CASE WHEN (e.data->>'available')::boolean THEN 1 ELSE 0 END AS available FROM events e LEFT JOIN matter_sensors s ON s.node_id = e.node_id WHERE e.event_type = 'node_updated' AND e.data ? 'available' AND COALESCE(s.sensor, 'node ' || e.node_id) IN ($sensor) AND $__timeFilter(e.time) ORDER BY e.time"
         }
       ]
     },
@@ -383,7 +429,7 @@
           "format": "time_series",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT $__timeGroupAlias(ts, '5m'), COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || a.node_id) AS sensor, count(*) AS updates FROM attribute_updates a LEFT JOIN matter_nodes n ON n.node_id = a.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE $__timeFilter(a.ts) GROUP BY 1, 2 ORDER BY 1"
+          "rawSql": "SELECT $__timeGroupAlias(a.time, '5m'), COALESCE(s.sensor, 'node ' || a.node_id) AS sensor, count(*) AS updates FROM attribute_updates a LEFT JOIN matter_sensors s ON s.node_id = a.node_id WHERE COALESCE(s.sensor, 'node ' || a.node_id) IN ($sensor) AND $__timeFilter(a.time) GROUP BY 1, 2 ORDER BY 1"
         }
       ]
     },
@@ -402,7 +448,7 @@
           "format": "table",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT node_id AS node, nn.custom_name AS name, label, product_name AS product, vendor_name AS vendor, unique_id, identity_source AS identity, available, date_commissioned AS commissioned, last_interview AS interviewed FROM matter_nodes n LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid ORDER BY node_id"
+          "rawSql": "SELECT node_id AS node, custom_name AS name, label, product, vendor, unique_id, identity_source AS identity, available, date_commissioned AS commissioned, last_interview AS interviewed FROM matter_sensors WHERE sensor IN ($sensor) ORDER BY node_id"
         }
       ]
     },
@@ -421,7 +467,7 @@
           "format": "table",
           "rawQuery": true,
           "refId": "A",
-          "rawSql": "SELECT e.ts AS time, e.event_type AS event, COALESCE(NULLIF(nn.custom_name, ''), NULLIF(n.label, ''), 'node ' || e.node_id) AS node_name, e.node_id, left(e.data::text, 200) AS data FROM events e LEFT JOIN matter_nodes n ON n.node_id = e.node_id LEFT JOIN node_names nn ON nn.device_uuid = n.device_uuid WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 50"
+          "rawSql": "SELECT e.time, e.event_type AS event, COALESCE(s.sensor, 'node ' || e.node_id) AS node_name, e.node_id, left(e.data::text, 200) AS data FROM events e LEFT JOIN matter_sensors s ON s.node_id = e.node_id WHERE $__timeFilter(e.time) AND COALESCE(s.sensor, 'node ' || e.node_id) IN ($sensor) ORDER BY e.time DESC LIMIT 50"
         }
       ]
     }
